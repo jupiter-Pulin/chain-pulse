@@ -1,0 +1,13 @@
+{
+  "name": "chain-pulse",
+  "version": "0.1.0",
+  "description": "夜间 EVM 链上数据日报管道:裸 JSON-RPC 采集 → 指标聚合 → Markdown 日报 → git 固化",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test 'tests/**/*.test.mjs'",
+    "run": "node src/run.mjs",
+    "dry": "node src/run.mjs --no-commit"
+  },
+  "license": "MIT"
+}
