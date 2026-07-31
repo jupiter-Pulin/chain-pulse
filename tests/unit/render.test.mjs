@@ -38,3 +38,39 @@ test('renderReport:关键段落齐全', () => {
   assert.match(md, /0xaaaaaa…aaaa/);
   assert.match(md, /\| WETH \| 0 \| 0 \| 0 \| - \|/); // 空数据不炸
 });
+
+test('renderReport:含本地日期语义提示', () => {
+  const md = renderReport(digest);
+  assert.match(md, /本地生成日期/);
+});
+
+test('renderReport:suspectedTruncation 为 true 时该行含可见截断标注,false 时不含', () => {
+  const d = {
+    ...digest,
+    transfers: {
+      windowBlocks: 50,
+      tokens: [
+        { symbol: 'USDT', count: 5000, uniqueSenders: 100, totalAmount: 999999, largest: null, suspectedTruncation: true },
+        { symbol: 'USDC', count: 10, uniqueSenders: 5, totalAmount: 100, largest: null, suspectedTruncation: false },
+      ],
+    },
+  };
+  const md = renderReport(d);
+  assert.match(md, /USDT\s*(⚠|可能截断)/);
+  const usdcLine = md.split('\n').find((l) => l.startsWith('| USDC'));
+  assert.doesNotMatch(usdcLine, /⚠|可能截断/);
+});
+
+test('renderReport:上限错误占位形态渲染安全占位值,不输出 undefined/NaN', () => {
+  const d = {
+    ...digest,
+    transfers: {
+      windowBlocks: 50,
+      tokens: [{ symbol: 'USDT', suspectedTruncation: true, count: 0, uniqueSenders: 0, totalAmount: 0, largest: null }],
+    },
+  };
+  const md = renderReport(d);
+  assert.doesNotMatch(md, /undefined/);
+  assert.doesNotMatch(md, /NaN/);
+  assert.match(md, /\| USDT ⚠ 可能截断 \| 0 \| 0 \| 0 \| - \|/);
+});

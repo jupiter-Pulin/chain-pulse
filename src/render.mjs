@@ -16,6 +16,8 @@ export function renderReport(digest) {
   lines.push('');
   lines.push(`> 生成于 ${generatedAt} · 最新区块 #${fmt(latestBlock, 0)} · 数据源:公共 JSON-RPC(只读)`);
   lines.push('');
+  lines.push('> 报告日期为本地生成日期(非 UTC 切片),数据覆盖运行前的采样/转账窗口,而非该日历日全天数据。');
+  lines.push('');
 
   lines.push(`## Gas 面貌(近 ${fee.blocks} 块 ≈ ${Math.round((fee.blocks * 12) / 60)} 分钟)`);
   lines.push('');
@@ -44,11 +46,12 @@ export function renderReport(digest) {
   lines.push('| 代币 | 转账笔数 | 独立发送方 | 总量 | 最大单笔 |');
   lines.push('| --- | --- | --- | --- | --- |');
   for (const t of transfers.tokens) {
+    const truncatedMark = t.suspectedTruncation ? ' ⚠ 可能截断' : '';
     const largest = t.largest
       ? `${fmt(t.largest.amount)} (${shortAddr(t.largest.from)})`
       : '-';
     lines.push(
-      `| ${t.symbol} | ${t.count} | ${t.uniqueSenders} | ${fmt(t.totalAmount, 0)} | ${largest} |`,
+      `| ${t.symbol}${truncatedMark} | ${fmt(t.count, 0)} | ${fmt(t.uniqueSenders, 0)} | ${fmt(t.totalAmount, 0)} | ${largest} |`,
     );
   }
   lines.push('');

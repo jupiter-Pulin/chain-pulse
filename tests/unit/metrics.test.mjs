@@ -9,6 +9,8 @@ import {
   summarizeBlock,
   decodeTransferLog,
   summarizeTransfers,
+  detectLogTruncation,
+  isLogLimitError,
 } from '../../src/metrics.mjs';
 
 test('hexToNumber / weiHexToGwei', () => {
@@ -89,4 +91,32 @@ test('summarizeTransfers:空日志不炸', () => {
   const s = summarizeTransfers([], 6);
   assert.equal(s.count, 0);
   assert.equal(s.largest, null);
+});
+
+test('detectLogTruncation:达到阈值为 true,否则 false,空数组恒 false', () => {
+  assert.equal(detectLogTruncation([1, 2, 3], { threshold: 3 }), true);
+  assert.equal(detectLogTruncation([1, 2], { threshold: 3 }), false);
+  assert.equal(detectLogTruncation([], { threshold: 0 }), false);
+});
+
+test('isLogLimitError:识别常见上限报错文本,大小写不敏感;普通错误返回 false', () => {
+  assert.equal(isLogLimitError('query returned more than 10000 results'), true);
+  assert.equal(isLogLimitError('Response size exceeded'), true);
+  assert.equal(isLogLimitError({ message: 'BLOCK RANGE limit exceeded' }), true);
+  assert.equal(isLogLimitError('connection timeout'), false);
+  assert.equal(isLogLimitError(new Error('socket hang up')), false);
+});
+
+test('summarizeTransfers:suspectedTruncation 由阈值判定,不改变既有字段取值', () => {
+  const logs = [
+    LOG('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'cccccccccccccccccccccccccccccccccccccccc', '0xf4240'),
+    LOG('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'dddddddddddddddddddddddddddddddddddddddd', '0x1e8480'),
+  ];
+  const truncated = summarizeTransfers(logs, 6, { threshold: 2 });
+  assert.equal(truncated.suspectedTruncation, true);
+  assert.equal(truncated.count, 2);
+  assert.equal(truncated.uniqueSenders, 2);
+  const notTruncated = summarizeTransfers(logs, 6, { threshold: 10 });
+  assert.equal(notTruncated.suspectedTruncation, false);
+  assert.equal(notTruncated.count, 2);
 });
