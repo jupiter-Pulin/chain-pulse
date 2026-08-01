@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Cointelegraph.com Funding News</title>
+<link>https://cointelegraph.com/rss/tag/funding</link>
+<description>Cointelegraph funding tag feed</description>
+<item>
+<title><![CDATA[Velocity raises $38M in Series B funding]]></title>
+<link>https://cointelegraph.com/news/velocity-raises-38m</link>
+<pubDate>Fri, 31 Jul 2026 10:00:00 GMT</pubDate>
+<description><![CDATA[Velocity, a crypto payments startup backed by Paradigm &amp; other investors, announced its Series B to expand wallet infrastructure across Asia.]]></description>
+</item>
+<item>
+<title><![CDATA[Some Startup raises $10M seed round]]></title>
+<link>https://cointelegraph.com/news/some-startup-seed</link>
+<pubDate>not-a-valid-date</pubDate>
+<description><![CDATA[Some startup raised a seed round from angel investors.]]></description>
+</item>
+</channel>
+</rss>

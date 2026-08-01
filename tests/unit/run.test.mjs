@@ -225,6 +225,77 @@ test('runOnce:push 失败时保留本地 commit,不判整体失败(INV-3)', asyn
   assert.equal(git.calls.commit.length, 1);
 });
 
+test('runOnce:融资模块失败(fetchImpl 抛错)时既有三板块照常渲染并提交,报告含错误说明 (AC-009)', async () => {
+  const fakeFs = makeFakeFs();
+  const git = makeFakeGit();
+  const collectFn = async () => ({
+    latestBlock: 100,
+    fee: { blocks: 1, baseFeeGwei: { min: 1, p50: 1, max: 1, latest: 1 }, gasUsedRatioAvg: 0.5 },
+    blockSamples: [],
+    transfers: { windowBlocks: 50, tokens: [] },
+  });
+  const failingFetch = async () => {
+    throw new Error('funding rss unreachable');
+  };
+  const result = await runOnce({
+    config: { watchlist: [] },
+    now: new Date('2026-07-31T18:20:00Z'),
+    noCommit: false,
+    root: '/fake-root',
+    collectFn,
+    readFile: fakeFs.readFile,
+    writeFile: fakeFs.writeFile,
+    mkdir: fakeFs.mkdir,
+    fileExists: fakeFs.fileExists,
+    fileSize: fakeFs.fileSize,
+    git,
+    env: {},
+    fetchImpl: failingFetch,
+    logger: silentLogger,
+  });
+
+  assert.equal(result.ok, true);
+  const report = fakeFs.files[join('/fake-root', 'reports', '2026-08-01.md')];
+  assert.match(report, /funding rss unreachable/);
+  assert.match(report, /## Gas 面貌/);
+  assert.ok(fakeFs.files[join('/fake-root', 'reports', 'latest.md')]);
+  assert.deepEqual(git.calls.add, [['-A']]);
+  assert.equal(git.calls.commit.length, 1);
+});
+
+test('runOnce:融资模块失败时 STATUS.md 仍为成功态格式,与融资功能引入前逐字一致 (AC-010)', async () => {
+  const fakeFs = makeFakeFs();
+  const git = makeFakeGit();
+  const collectFn = async () => ({
+    latestBlock: 100,
+    fee: { blocks: 1, baseFeeGwei: { min: 1, p50: 1, max: 1, latest: 1 }, gasUsedRatioAvg: 0.5 },
+    blockSamples: [],
+    transfers: { windowBlocks: 50, tokens: [] },
+  });
+  const failingFetch = async () => ({ ok: false, status: 500 });
+  const result = await runOnce({
+    config: { watchlist: [] },
+    now: new Date('2026-07-31T18:20:00Z'),
+    noCommit: false,
+    root: '/fake-root',
+    collectFn,
+    readFile: fakeFs.readFile,
+    writeFile: fakeFs.writeFile,
+    mkdir: fakeFs.mkdir,
+    fileExists: fakeFs.fileExists,
+    fileSize: fakeFs.fileSize,
+    git,
+    env: {},
+    fetchImpl: failingFetch,
+    logger: silentLogger,
+  });
+
+  assert.equal(result.ok, true);
+  const statusContent = fakeFs.files[join('/fake-root', 'reports', 'STATUS.md')];
+  assert.match(statusContent, /结果: ok\(成功\)/);
+  assert.match(statusContent, /最新区块: #100/);
+});
+
 test('rotateLogIfNeeded:超阈值截断,保留尾部', () => {
   const fakeFs = makeFakeFs({ '/log.txt': 'x'.repeat(200) });
   rotateLogIfNeeded({ path: '/log.txt', maxBytes: 100 }, fakeFs);
