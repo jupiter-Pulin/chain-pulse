@@ -18,6 +18,8 @@ import {
 import { renderReport } from './render.mjs';
 import { reportDateStr, buildStatus, shouldTruncateLog } from './orchestration.mjs';
 import { notifySlack } from './notify.mjs';
+import { fetchFundingRss } from './funding-rss.mjs';
+import { parseFundingEvents, filterFundingEvents } from './funding.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -86,6 +88,16 @@ export async function collect(config, deps = {}) {
     blockSamples,
     transfers: { windowBlocks, tokens },
   };
+}
+
+// 融资信号采集:拉取 → 解析 → 过滤。任何一步抛错均向上传播,由 runOnce 捕获为
+// digest.funding = {error} 形态(隔离降级,INV-1),不使既有三板块的采集/渲染/提交受影响。
+export async function collectFunding(config, deps = {}) {
+  const { fetchImpl = fetch, now, timeZone } = deps;
+  const xml = await fetchFundingRss(fetchImpl);
+  const { events, parseFailures } = parseFundingEvents(xml, timeZone);
+  const filtered = filterFundingEvents(events, { now, timeZone });
+  return { events: filtered, parseFailures };
 }
 
 function makeDefaultGit(root) {
@@ -176,6 +188,12 @@ export async function runOnce(deps) {
       }
     }
     return { ok: false, reason: err.message };
+  }
+
+  try {
+    digest.funding = await collectFunding(config, { fetchImpl, now, timeZone });
+  } catch (err) {
+    digest.funding = { error: err.message };
   }
 
   const report = renderReport(digest);

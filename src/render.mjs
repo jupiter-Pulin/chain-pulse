@@ -9,6 +9,20 @@ function shortAddr(addr) {
   return addr.slice(0, 8) + '…' + addr.slice(-4);
 }
 
+function truncateTitle(title) {
+  if (title.length <= 80) return title;
+  return title.slice(0, 80) + '…';
+}
+
+function escapeTableCell(s) {
+  return String(s).replace(/\|/g, '\\|');
+}
+
+function fmtUsd(n) {
+  if (n === null || n === undefined) return '-';
+  return '$' + n.toLocaleString('en-US');
+}
+
 export function renderReport(digest) {
   const { dateStr, generatedAt, latestBlock, fee, blockSamples, transfers } = digest;
   const lines = [];
@@ -55,6 +69,38 @@ export function renderReport(digest) {
     );
   }
   lines.push('');
+
+  if (digest.funding) {
+    lines.push('## 融资信号');
+    lines.push('');
+    const funding = digest.funding;
+    if (funding.error) {
+      lines.push(`⚠ 融资信号采集失败:${funding.error}`);
+      lines.push('');
+    } else {
+      const events = funding.events || [];
+      if (events.length === 0) {
+        lines.push('本期无符合条件的新官宣');
+        lines.push('');
+      } else {
+        lines.push('| 公司/项目 | 金额 | 官宣日期 | 标签 | 链接 |');
+        lines.push('| --- | --- | --- | --- | --- |');
+        for (const e of events) {
+          const title = escapeTableCell(truncateTitle(e.title));
+          const amount = fmtUsd(e.amountUsd);
+          const tags = e.tags.join(', ');
+          const link = escapeTableCell(e.link);
+          lines.push(`| ${title} | ${amount} | ${e.announcedDate} | ${tags} | ${link} |`);
+        }
+        lines.push('');
+      }
+      if (funding.parseFailures) {
+        lines.push(`另有 ${funding.parseFailures} 条解析失败`);
+        lines.push('');
+      }
+    }
+  }
+
   lines.push('---');
   lines.push('*chain-pulse:零依赖 Node 管道,裸 JSON-RPC 采集,ERC-20 事件手工解码。仅只读数据,不接任何交易接口。*');
   lines.push('');
