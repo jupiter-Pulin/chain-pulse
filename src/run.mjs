@@ -4,6 +4,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rpcCall as defaultRpcCall } from './rpc.mjs';
@@ -124,14 +125,18 @@ function makeDefaultGit(root) {
 }
 
 // 外部 cron 日志按大小截断,保留尾部。path 未配置或文件不存在时 no-op、不报错。
+// path 支持 ~/ 前缀(展开为 homedir),使 config 不必携带机器绝对路径。
 export function rotateLogIfNeeded(logRotation, { fileExists, readFile, writeFile, fileSize }) {
   if (!logRotation || !logRotation.path) return;
-  if (!fileExists(logRotation.path)) return;
-  const size = fileSize(logRotation.path);
+  const path = logRotation.path.startsWith('~/')
+    ? join(homedir(), logRotation.path.slice(2))
+    : logRotation.path;
+  if (!fileExists(path)) return;
+  const size = fileSize(path);
   if (!shouldTruncateLog(size, logRotation.maxBytes)) return;
-  const content = readFile(logRotation.path, 'utf8');
+  const content = readFile(path, 'utf8');
   const keepBytes = Math.max(0, Math.floor(logRotation.maxBytes / 2));
-  writeFile(logRotation.path, content.slice(-keepBytes));
+  writeFile(path, content.slice(-keepBytes));
 }
 
 // 单次运行的编排:注入全部副作用依赖,返回 { ok, reason? }。
