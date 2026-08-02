@@ -23,6 +23,19 @@
 
 每次运行(无论成败)都会写 `reports/STATUS.md`,记录本次运行的时间与结果;采集失败时会单独提交该文件,让运行状态经 git 心跳对外可见。
 
+## 安装
+
+前置条件:Node ≥ 22(需要内置 `fetch` 与 `node --test`)、`git`。无需 `npm install`——本仓零依赖,没有 `node_modules`。
+
+```bash
+git clone https://github.com/jupiter-Pulin/chain-pulse.git
+cd chain-pulse
+node -v          # 确认 ≥ v22
+npm test         # 离线单测,应全绿
+```
+
+可选配置在 `config/config.json`:RPC 端点列表、采样参数、`reportTimeZone`、watchlist。可选环境变量 `CHAIN_PULSE_SLACK_WEBHOOK`,设置后采集失败会推 Slack 告警;不设置则跳过告警,不影响主流程。
+
 ## 运行
 
 ```bash
@@ -30,6 +43,8 @@ npm test        # 离线单测
 npm run dry     # 跑一次但不 commit
 npm run run     # 完整流程(采集+报告+commit)
 ```
+
+先跑 `npm run dry` 确认能连上 RPC 端点并写出 `reports/latest.md`,再交给调度。
 
 ## 架构
 
@@ -42,9 +57,53 @@ src/notify.mjs        可选 Slack 告警(仅当 CHAIN_PULSE_SLACK_WEBHOOK 存�
 src/run.mjs           编排层:采集 → 聚合 → 渲染 → 落盘 → git(副作用依赖可注入)
 ```
 
-## 运维
+## 调度(macOS LaunchAgent)
 
-调度由 LaunchAgent `~/Library/LaunchAgents/com.pulin.chain-pulse.plist` 每晚 02:20(本地时间)触发,标准输出/错误重定向到 `~/logs/chain-pulse-cron.log`。
+每晚 02:20(本地时间)触发一次,标准输出/错误统一重定向到 `$HOME/logs/chain-pulse-cron.log`。
+
+在**仓库根目录**执行下面这段(会按当前 clone 位置与当前用户生成 plist,无需手工填任何绝对路径):
+
+```bash
+mkdir -p "$HOME/logs" "$HOME/Library/LaunchAgents"
+PLIST="$HOME/Library/LaunchAgents/local.chain-pulse.plist"
+
+cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.chain-pulse</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$(command -v node)</string>
+    <string>$PWD/src/run.mjs</string>
+  </array>
+  <key>WorkingDirectory</key><string>$PWD</string>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>20</integer></dict>
+  <key>StandardOutPath</key><string>$HOME/logs/chain-pulse-cron.log</string>
+  <key>StandardErrorPath</key><string>$HOME/logs/chain-pulse-cron.log</string>
+</dict>
+</plist>
+EOF
+
+launchctl unload "$PLIST" 2>/dev/null   # 已装载过时先卸载,幂等
+launchctl load "$PLIST"
+launchctl list | grep chain-pulse       # 确认已注册
+```
+
+`Label` 可自定义,但要与 plist 文件名保持一致。改完 plist 后重新 `launchctl unload` + `launchctl load` 才会生效。停止调度:`launchctl unload "$PLIST"`。
+
+立刻触发一次(不等到凌晨),用于验证调度链路:
+
+```bash
+launchctl start local.chain-pulse
+tail -n 50 "$HOME/logs/chain-pulse-cron.log"
+```
+
+日志轮转由 `config/config.json` 的 `logRotation` 控制,默认指向上面这个日志文件、超过 5 MiB 时截断保留尾半段(配置里以 `~` 前缀书写,由 `src/run.mjs` 展开为当前用户 home)。
+
+## 运维
 
 ### 如何验证它还活着
 
@@ -56,7 +115,7 @@ git log --oneline -5
 cat reports/STATUS.md
 
 # 查看外部 cron 日志尾部
-tail -n 50 ~/logs/chain-pulse-cron.log
+tail -n 50 "$HOME/logs/chain-pulse-cron.log"
 ```
 
 若 `git log` 长时间没有新的 `chain-pulse: ... auto`/`... failed` 提交,或 `reports/STATUS.md` 长时间未更新,说明管道已静默死亡,需要人工介入。
