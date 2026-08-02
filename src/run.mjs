@@ -19,6 +19,7 @@ import {
 import { renderReport } from './render.mjs';
 import { reportDateStr, buildStatus, shouldTruncateLog } from './orchestration.mjs';
 import { notifySlack } from './notify.mjs';
+import { sanitizePaths } from './sanitize.mjs';
 import { fetchFundingRss } from './funding-rss.mjs';
 import { parseFundingEvents, filterFundingEvents } from './funding.mjs';
 
@@ -169,6 +170,10 @@ export async function runOnce(deps) {
   const reportsDir = join(root, 'reports');
   const statusPath = join(reportsDir, 'STATUS.md');
 
+  // tracked 产物的唯一写盘出口:落盘前统一脱敏,使运行时错误信息(采集失败原因、融资错误)
+  // 携带的本机绝对路径不进仓库。无路径的正常内容原样通过,报告字节不变。
+  const writeReportFile = (path, content) => writeFile(path, sanitizePaths(content));
+
   let digest;
   try {
     digest = {
@@ -178,7 +183,7 @@ export async function runOnce(deps) {
     };
   } catch (err) {
     mkdir(reportsDir, { recursive: true });
-    writeFile(statusPath, buildStatus({ ok: false, at: now.toISOString(), reason: err.message }));
+    writeReportFile(statusPath, buildStatus({ ok: false, at: now.toISOString(), reason: err.message }));
     await notifySlack(`chain-pulse 采集失败(${dateStr}): ${err.message}`, { env, fetchImpl }).catch(() => {});
 
     if (!noCommit) {
@@ -203,9 +208,9 @@ export async function runOnce(deps) {
 
   const report = renderReport(digest);
   mkdir(reportsDir, { recursive: true });
-  writeFile(join(reportsDir, `${dateStr}.md`), report);
-  writeFile(join(reportsDir, 'latest.md'), report);
-  writeFile(statusPath, buildStatus({ ok: true, at: now.toISOString(), latestBlock: digest.latestBlock }));
+  writeReportFile(join(reportsDir, `${dateStr}.md`), report);
+  writeReportFile(join(reportsDir, 'latest.md'), report);
+  writeReportFile(statusPath, buildStatus({ ok: true, at: now.toISOString(), latestBlock: digest.latestBlock }));
   logger.log(`[chain-pulse] 报告已写入 reports/${dateStr}.md(最新区块 #${digest.latestBlock})`);
 
   if (noCommit) return { ok: true };
