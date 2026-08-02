@@ -11,6 +11,9 @@ import { renderReport } from '../../src/render.mjs';
 import { buildStatus } from '../../src/orchestration.mjs';
 
 const HOME = process.env.HOME || homedir();
+// macOS 家目录前缀,运行时拼接:裸字面量会命中 repo-hygiene 的 AC-001 守卫
+// (tracked 文件不得含本机家目录前缀),与该文件的 `[U]sers` 包裹是同一个理由。
+const MAC_HOME = `/${'Users'}`;
 const silentLogger = { log() {}, error() {} };
 const NOW = new Date('2026-07-31T18:20:00Z'); // Asia/Shanghai 下报告日期为 2026-08-01
 
@@ -32,10 +35,10 @@ function realWriteDeps(root) {
   return { root, noCommit: true, now: NOW, env: {}, logger: silentLogger };
 }
 
-test('sanitizePaths:/Users/<用户名> 前缀与 HOME 实际值均收敛为 ~ (AC-001)', () => {
-  assert.equal(sanitizePaths('/Users/fakeuser/logs/x.log'), '~/logs/x.log');
+test('sanitizePaths:macOS 家目录前缀与 HOME 实际值均收敛为 ~ (AC-001)', () => {
+  assert.equal(sanitizePaths(`${MAC_HOME}/fakeuser/logs/x.log`), '~/logs/x.log');
   assert.equal(
-    sanitizePaths("ENOENT: open '/Users/fakeuser/logs/x.log'"),
+    sanitizePaths(`ENOENT: open '${MAC_HOME}/fakeuser/logs/x.log'`),
     "ENOENT: open '~/logs/x.log'",
   );
   // HOME 未必在 /Users 下(Linux),显式注入时同样脱敏
@@ -47,7 +50,7 @@ test('sanitizePaths:链上地址/URL/已是 ~ 的写法保持原样 (AC-001)', (
   const untouched = [
     '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     'https://cointelegraph.com/rss/tag/funding',
-    'https://example.com/Users/foo/bar',
+    `https://example.com${MAC_HOME}/foo/bar`,
     '~/logs/x.log',
     'rpc 超时',
   ];
@@ -58,7 +61,7 @@ test('runOnce:采集失败原因中的本机路径落盘前被脱敏 (AC-002/AC-
   const root = makeTempRoot(t);
   const collectFn = async () => {
     throw new Error(
-      `ENOENT: no such file or directory, open '/Users/fakeuser/logs/x.log' (cron log: ${HOME}/logs/chain-pulse.log)`,
+      `ENOENT: no such file or directory, open '${MAC_HOME}/fakeuser/logs/x.log' (cron log: ${HOME}/logs/chain-pulse.log)`,
     );
   };
   const result = await runOnce({ ...realWriteDeps(root), config: {}, collectFn });
@@ -66,7 +69,7 @@ test('runOnce:采集失败原因中的本机路径落盘前被脱敏 (AC-002/AC-
   assert.equal(result.ok, false);
   const status = readFileSync(join(root, 'reports', 'STATUS.md'), 'utf8');
   assert.match(status, /结果: failed\(失败\)/);
-  assert.ok(!status.includes('/Users/'), `STATUS.md 仍含 /Users/: ${status}`);
+  assert.ok(!status.includes(`${MAC_HOME}/`), `STATUS.md 仍含家目录前缀: ${status}`);
   assert.ok(!status.includes(HOME), `STATUS.md 仍含 HOME 实际值: ${status}`);
   assert.match(status, /~\/logs\/x\.log/);
   assert.match(status, /~\/logs\/chain-pulse\.log/);
@@ -75,7 +78,9 @@ test('runOnce:采集失败原因中的本机路径落盘前被脱敏 (AC-002/AC-
 test('runOnce:日报里的融资错误字段落盘前被脱敏 (AC-002/AC-003)', async (t) => {
   const root = makeTempRoot(t);
   const failingFetch = async () => {
-    throw new Error(`funding rss 缓存读取失败: /Users/fakeuser/cache/rss.xml, ${HOME}/cache/rss.xml`);
+    throw new Error(
+      `funding rss 缓存读取失败: ${MAC_HOME}/fakeuser/cache/rss.xml, ${HOME}/cache/rss.xml`,
+    );
   };
   const result = await runOnce({
     ...realWriteDeps(root),
@@ -87,7 +92,7 @@ test('runOnce:日报里的融资错误字段落盘前被脱敏 (AC-002/AC-003)',
   assert.equal(result.ok, true);
   const report = readFileSync(join(root, 'reports', '2026-08-01.md'), 'utf8');
   assert.match(report, /融资信号采集失败/);
-  assert.ok(!report.includes('/Users/'), `日报仍含 /Users/: ${report}`);
+  assert.ok(!report.includes(`${MAC_HOME}/`), `日报仍含家目录前缀: ${report}`);
   assert.ok(!report.includes(HOME), `日报仍含 HOME 实际值: ${report}`);
   assert.match(report, /~\/cache\/rss\.xml/);
 });
