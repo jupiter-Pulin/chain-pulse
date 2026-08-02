@@ -80,18 +80,25 @@ export function renderReport(digest) {
     } else {
       const events = funding.events || [];
       if (events.length === 0) {
-        lines.push('本期无符合条件的新官宣');
+        lines.push('本期无新官宣(近 7 天窗)');
         lines.push('');
       } else {
         lines.push('| 公司/项目 | 金额 | 官宣日期 | 标签 | 链接 |');
         lines.push('| --- | --- | --- | --- | --- |');
         for (const e of events) {
-          const title = escapeTableCell(truncateTitle(e.title));
+          const star = e.highlight ? '⭐ ' : '';
+          const title = star + escapeTableCell(truncateTitle(e.title));
           const amount = fmtUsd(e.amountUsd);
           const tags = e.tags.join(', ');
           const link = escapeTableCell(e.link);
           lines.push(`| ${title} | ${amount} | ${e.announcedDate} | ${tags} | ${link} |`);
         }
+        lines.push('');
+        lines.push('⭐ = 金额 ≥ $5M 或 VC 名单命中;其余为宽召回原始条目,取舍留给晨检');
+        lines.push('');
+      }
+      if (funding.omitted) {
+        lines.push(`另有 ${funding.omitted} 条超出展示上限省略`);
         lines.push('');
       }
       if (funding.parseFailures) {

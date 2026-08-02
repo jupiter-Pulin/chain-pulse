@@ -81,9 +81,10 @@ test('renderReport:融资信号板块置于既有三板块之后、页脚之前,
     ...digest,
     funding: {
       events: [
-        { title: longTitle, link: 'https://x.example/a', announcedDate: '2026-07-30', amountUsd: null, tags: ['tier1', 'wallet'] },
-        { title: 'Small Deal raises $6M', link: 'https://x.example/b', announcedDate: '2026-07-29', amountUsd: 6_000_000, tags: [] },
+        { title: longTitle, link: 'https://x.example/a', announcedDate: '2026-07-30', amountUsd: null, tags: ['tier1', 'wallet'], highlight: true },
+        { title: 'Small Deal raises $6M', link: 'https://x.example/b', announcedDate: '2026-07-29', amountUsd: 6_000_000, tags: [], highlight: false },
       ],
+      omitted: 1,
       parseFailures: 2,
     },
   };
@@ -97,17 +98,19 @@ test('renderReport:融资信号板块置于既有三板块之后、页脚之前,
 
   assert.ok(lines.includes('| 公司/项目 | 金额 | 官宣日期 | 标签 | 链接 |'));
 
-  const rowLines = lines.filter((l) => l.startsWith('| X') || l.startsWith('| Small Deal'));
+  const rowLines = lines.filter((l) => l.startsWith('| ⭐ X') || l.startsWith('| Small Deal'));
   assert.equal(rowLines.length, 2);
 
-  const longRow = rowLines.find((l) => l.startsWith('| X'));
+  const longRow = rowLines.find((l) => l.startsWith('| ⭐ X')); // highlight 行带 ⭐ 前缀
   assert.match(longRow, /…/); // 超 80 字符截断以省略号收尾
   assert.match(longRow, /X{40}\\\|Y{39}…/); // 破表字符 | 被转义为 \|,不产生残行/错列
   assert.match(longRow, /\| - \| 2026-07-30 \| tier1, wallet \| https:\/\/x\.example\/a \|$/); // null 金额显示 -
 
-  const shortRow = rowLines.find((l) => l.startsWith('| Small Deal'));
+  const shortRow = rowLines.find((l) => l.startsWith('| Small Deal')); // 非 highlight 行无前缀
   assert.match(shortRow, /\$6,000,000/);
 
+  assert.match(md, /⭐ = 金额 ≥ \$5M 或 VC 名单命中/); // 图例行
+  assert.match(md, /另有 1 条超出展示上限省略/); // omitted 截断说明
   assert.match(md, /另有 2 条解析失败/);
 });
 
@@ -115,7 +118,7 @@ test('renderReport:events 为空(成功空)时改渲染单行占位,不产生表
   const d = { ...digest, funding: { events: [], parseFailures: 0 } };
   const md = renderReport(d);
   assert.match(md, /## 融资信号/);
-  assert.match(md, /本期无符合条件的新官宣/);
+  assert.match(md, /本期无新官宣\(近 7 天窗\)/);
   assert.doesNotMatch(md, /\| 公司\/项目 \|/);
 });
 

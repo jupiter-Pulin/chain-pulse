@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFundingEvents, parseAmountUsd, extractTags, filterFundingEvents } from '../../src/funding.mjs';
+import { parseFundingEvents, parseAmountUsd, extractTags, prepareFundingEvents } from '../../src/funding.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const fixture = readFileSync(join(HERE, '../fixtures/funding-rss-sample.xml'), 'utf8');
@@ -49,7 +49,7 @@ test('extractTags:tier1/asia/wallet 全文大小写不敏感包含匹配,同一�
   ]);
 });
 
-test('filterFundingEvents:保留近 7 天窗内且(金额≥5M 或 VC 命中)的事件,窗外/两条件皆不满足的被剔除 (AC-004)', () => {
+test('prepareFundingEvents:近 7 天窗全量保留并标注 highlight(金额≥5M 或 tier1/asia 命中),窗外剔除,wallet 不触发;排序 highlight 优先+日期降序 (AC-004,2026-08-02 调整:过滤降级为标注)', () => {
   const now = new Date('2026-08-01T10:00:00Z'); // Asia/Shanghai 本地 2026-08-01 18:00
   const events = [
     { title: 'in-window-amount', link: 'l1', announcedDate: '2026-07-31', amountUsd: 6_000_000, tags: [] },
@@ -57,8 +57,25 @@ test('filterFundingEvents:保留近 7 天窗内且(金额≥5M 或 VC 命中)的
     { title: 'in-window-no-hit', link: 'l3', announcedDate: '2026-07-30', amountUsd: 1_000_000, tags: [] },
     { title: 'out-of-window', link: 'l4', announcedDate: '2026-07-25', amountUsd: 10_000_000, tags: [] },
     { title: 'edge-boundary-day7', link: 'l5', announcedDate: '2026-07-26', amountUsd: 5_000_000, tags: [] },
+    { title: 'in-window-wallet-only', link: 'l6', announcedDate: '2026-07-29', amountUsd: null, tags: ['wallet'] },
   ];
-  const kept = filterFundingEvents(events, { now, timeZone: 'Asia/Shanghai' });
-  const keptLinks = kept.map((e) => e.link).sort();
-  assert.deepEqual(keptLinks, ['l1', 'l2', 'l5']);
+  const { events: kept, omitted } = prepareFundingEvents(events, { now, timeZone: 'Asia/Shanghai' });
+  assert.equal(omitted, 0);
+  // 窗内 5 条全保留(旧行为会丢 l3/l6),窗外 l4 剔除;highlight 组(l1/l2/l5)按日期降序在前
+  assert.deepEqual(kept.map((e) => e.link), ['l1', 'l2', 'l5', 'l3', 'l6']);
+  assert.deepEqual(kept.map((e) => e.highlight), [true, true, true, false, false]);
+});
+
+test('prepareFundingEvents:超过 maxEvents 截断计入 omitted,highlight 优先保留(防灌爆)', () => {
+  const now = new Date('2026-08-01T10:00:00Z');
+  const noise = Array.from({ length: 5 }, (_, i) => ({
+    title: `noise-${i}`, link: `n${i}`, announcedDate: '2026-07-31', amountUsd: null, tags: [],
+  }));
+  const big = { title: 'big-round', link: 'hl', announcedDate: '2026-07-30', amountUsd: 9_000_000, tags: [] };
+  const { events: kept, omitted } = prepareFundingEvents([...noise, big], {
+    now, timeZone: 'Asia/Shanghai', maxEvents: 3,
+  });
+  assert.equal(kept.length, 3);
+  assert.equal(omitted, 3);
+  assert.equal(kept[0].link, 'hl'); // highlight 排最前,截断永远先砍非 highlight 尾部
 });

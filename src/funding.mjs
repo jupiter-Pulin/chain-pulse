@@ -1,4 +1,6 @@
 // 纯函数层:融资 RSS 解析、金额语境锚定解析、7 天窗过滤、VC/wallet 标签匹配。零副作用,可离线单测。
+// 2026-08-02 调整:金额/VC 从「过滤门槛」降级为「⭐ 标注」——源是编辑精选低流量 RSS,
+// 按金额拦截会把标题不带数字的真官宣一并丢掉;宽召回全量出报,取舍留给晨检(人/agent)。
 import { reportDateStr } from './orchestration.mjs';
 
 // VC 名单(模块内常量,不进 config.json,详见 spec 契约⑤)。
@@ -101,14 +103,31 @@ function daysBeforeDateStr(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
-// 保留 announcedDate 落在近 7 天窗(含当日,日界按 timeZone,基准为注入的 now)且
-// (amountUsd ≥ 5_000_000 或 VC 名单命中)的事件;amountUsd=null 仅 VC 命中时保留。
-export function filterFundingEvents(events, { now, timeZone }) {
+export const HIGHLIGHT_AMOUNT_USD = 5_000_000;
+const MAX_EVENTS = 40;
+
+// 保留 announcedDate 落在近 7 天窗(含当日,日界按 timeZone,基准为注入的 now)的**全部**事件,
+// 金额 ≥ 5M 或 VC 名单(tier1/asia)命中只置 highlight 标注、不再拦截;wallet 标签不触发 highlight。
+// 排序 highlight 优先、组内按 announcedDate 降序;超过 maxEvents 截断防灌爆,截断数计入 omitted。
+export function prepareFundingEvents(events, { now, timeZone, maxEvents = MAX_EVENTS }) {
   const todayStr = reportDateStr(now, timeZone);
   const cutoffStr = daysBeforeDateStr(todayStr, 6);
-  return events.filter((e) => {
-    if (e.announcedDate < cutoffStr || e.announcedDate > todayStr) return false;
-    const vcHit = e.tags.includes('tier1') || e.tags.includes('asia');
-    return (e.amountUsd !== null && e.amountUsd >= 5_000_000) || vcHit;
+  const inWindow = events
+    .filter((e) => e.announcedDate >= cutoffStr && e.announcedDate <= todayStr)
+    .map((e) => ({
+      ...e,
+      highlight:
+        (e.amountUsd !== null && e.amountUsd >= HIGHLIGHT_AMOUNT_USD) ||
+        e.tags.includes('tier1') ||
+        e.tags.includes('asia'),
+    }));
+  inWindow.sort((a, b) => {
+    if (a.highlight !== b.highlight) return a.highlight ? -1 : 1;
+    if (a.announcedDate !== b.announcedDate) return a.announcedDate < b.announcedDate ? 1 : -1;
+    return 0;
   });
+  return {
+    events: inWindow.slice(0, maxEvents),
+    omitted: Math.max(0, inWindow.length - maxEvents),
+  };
 }
